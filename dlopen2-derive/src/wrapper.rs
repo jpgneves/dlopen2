@@ -47,8 +47,21 @@ pub fn impl_wrapper_api(ast: &DeriveInput) -> proc_macro2::TokenStream {
 }
 
 fn field_to_tokens(field: &Field) -> proc_macro2::TokenStream {
+    match &field.ty {
+        ty@ (Type::BareFn(_) | Type::Reference(_) | Type::Ptr(_) | Type::Path(_)) => base_field_to_tokens(&ty, &field),
+        Type::Group(ref group) => {
+            base_field_to_tokens(&group.elem, field)
+        }
+        _ => {
+            //dbg!();
+            panic!("Only bare functions, references and pointers are allowed in structures implementing WrapperApi trait")
+        }
+    }
+}
+
+fn base_field_to_tokens(ty: &Type, field: &Field) -> proc_macro2::TokenStream {
     let allow_null = has_marker_attr(field, ALLOW_NULL);
-    match field.ty {
+    match ty {
         Type::BareFn(_) | Type::Reference(_) => {
             if allow_null {
                 panic!(
@@ -83,10 +96,8 @@ fn field_to_tokens(field: &Field) -> proc_macro2::TokenStream {
                 _ => panic!("Only bare functions, optional bare functions, references and pointers are allowed in structures implementing WrapperApi trait")
             }
         }
-        _ => {
-            // dbg!();
-            panic!("Only bare functions, references and pointers are allowed in structures implementing WrapperApi trait")
-        }
+        _ =>
+        panic!("Only bare functions, references and pointers are allowed in structures implementing WrapperApi trait")
     }
 }
 
@@ -141,13 +152,21 @@ fn optional_field(field: &Field) -> proc_macro2::TokenStream {
 }
 
 fn field_to_wrapper(field: &Field) -> Option<proc_macro2::TokenStream> {
+    match &field.ty {
+        ty @ (Type::BareFn(_) | Type::Reference(_) | Type::Path(_) | Type::Ptr(_)) => base_field_to_wrapper(&ty, field),
+        Type::Group(ref group) => base_field_to_wrapper(&group.elem, field),
+        _ => panic!("Unsupported field type")
+    }
+}
+
+fn base_field_to_wrapper(ty: &Type, field: &Field) -> Option<proc_macro2::TokenStream> {
     let ident = field
         .ident
         .as_ref()
         .expect("Fields must have idents (tuple structs are not supported)");
     let attrs = get_non_marker_attrs(field);
 
-    match field.ty {
+    match ty {
         Type::BareFn(ref fun) => {
             if fun.variadic.is_some() {
                 None
